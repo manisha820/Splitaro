@@ -1,85 +1,182 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Message, Conversation } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface ChatContextType {
   conversations: Conversation[];
   messages: Record<string, Message[]>;
-  sendMessage: (conversationId: string, text: string) => void;
+  sendMessage: (conversationId: string, text: string) => Promise<void>;
   markAsRead: (conversationId: string) => void;
+  startPrivateChat: (userId: string) => Promise<string | null>;
+  activeConversationId: string | null;
+  setActiveConversationId: (id: string | null) => void;
+  fetchChats: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const [conversations, setConversations] = useState<Conversation[]>([
-    {
-      id: 'c1',
-      name: 'Berlin Route Pool',
-      lastMessage: 'Driver just confirmed departure...',
-      timestamp: '10:30 AM',
-      type: 'group',
-      unreadCount: 2
-    },
-    {
-      id: 'c2',
-      name: 'Marcus Weber',
-      lastMessage: 'I will be at the pickup point.',
-      timestamp: 'Yesterday',
-      type: 'private',
-      avatar: 'https://i.pravatar.cc/100?u=marcus',
-      unreadCount: 0
-    },
-    {
-      id: 'c3',
-      name: 'Sarah L.',
-      lastMessage: 'Is the musical instrument safe?',
-      timestamp: 'Monday',
-      type: 'private',
-      avatar: 'https://i.pravatar.cc/100?u=sarah',
-      unreadCount: 0
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchChats();
+  }, []);
+
+  const fetchChats = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    const userId = session.user.id;
+
+    // Get all conversations I am part of
+    const { data: parts } = await supabase
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', userId);
+
+    if (!parts || parts.length === 0) {
+      setConversations([]);
+      return;
     }
-  ]);
 
-  const [messages, setMessages] = useState<Record<string, Message[]>>({
-    'c1': [
-      { id: 'm1', senderId: 'u2', senderName: 'Marcus', text: 'Driver just confirmed departure from Cologne.', timestamp: '10:25 AM', isMe: false },
-      { id: 'm2', senderId: 'u1', senderName: 'You', text: 'Perfect! I will be there.', timestamp: '10:30 AM', isMe: true }
-    ],
-    'c2': [
-      { id: 'm3', senderId: 'u2', senderName: 'Marcus', text: 'I will be at the pickup point.', timestamp: 'Yesterday', isMe: false }
-    ]
-  });
+    const conversationIds = parts.map(p => p.conversation_id);
 
-  const sendMessage = (conversationId: string, text: string) => {
-    const newMessage: Message = {
-      id: Math.random().toString(36).substr(2, 9),
-      senderId: 'u1',
-      senderName: 'You',
-      text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isMe: true
-    };
+    // Fetch conversation details.
+    const { data: convs } = await supabase
+      .from('conversations')
+      .select('*, conversation_participants(user_id, profiles(full_name, avatar_url))')
+      .in('id', conversationIds)
+      .order('created_at', { ascending: false });
 
-    setMessages(prev => ({
-      ...prev,
-      [conversationId]: [...(prev[conversationId] || []), newMessage]
-    }));
+    if (convs) {
+      const formattedConvs: Conversation[] = convs.map(c => {
+        let name = c.name;
+        let avatar = undefined;
 
-    setConversations(prev => prev.map(conv => 
-      conv.id === conversationId 
-        ? { ...conv, lastMessage: text, timestamp: 'Just now' } 
-        : conv
-    ));
+        if (c.type === 'private') {
+           const otherParticipant = c.conversation_participants?.find((p: any) => p.user_id !== userId);
+           if (otherParticipant && otherParticipant.profiles) {
+             name = otherParticipant.profiles.full_name;
+             avatar = otherParticipant.profiles.avatar_url;
+           }
+        }
+
+        return {
+          id: c.id,
+          name: name || 'Chat',
+          lastMessage: 'Tap to view messages...',
+          timestamp: new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: c.type,
+          avatar,
+          unreadCount: 0
+        };
+      });
+
+      // Fetch ALL messages for these conversations
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*, profiles:sender_id(full_name)')
+        .in('conversation_id', conversationIds)
+        .order('created_at', { ascending: true });
+
+      if (msgs) {
+        const msgsDict: Record<string, Message[]> = {};
+        msgs.forEach(m => {
+          if (!msgsDict[m.conversation_id]) msgsDict[m.conversation_id] = [];
+          msgsDict[m.conversation_id].push({
+            id: m.id,
+            senderId: m.sender_id,
+            senderName: m.profiles?.full_name || 'User',
+            text: m.content,
+            timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isMe: m.sender_id === userId
+          });
+        });
+
+        // Update lastMessage on conversations based on actual messages
+        const updatedConvs = formattedConvs.map(c => {
+           const cMsgs = msgsDict[c.id];
+           if (cMsgs && cMsgs.length > 0) {
+              const lastM = cMsgs[cMsgs.length - 1];
+              return { ...c, lastMessage: lastM.text, timestamp: lastM.timestamp };
+           }
+           return c;
+        });
+        
+        setMessages(msgsDict);
+        setConversations(updatedConvs);
+      } else {
+        setConversations(formattedConvs);
+      }
+    }
+  };
+
+  const sendMessage = async (conversationId: string, text: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    await supabase.from('messages').insert({
+      conversation_id: conversationId,
+      sender_id: session.user.id,
+      content: text
+    });
+
+    await fetchChats();
   };
 
   const markAsRead = (conversationId: string) => {
-    setConversations(prev => prev.map(conv => 
-      conv.id === conversationId ? { ...conv, unreadCount: 0 } : conv
-    ));
+    // mock for now
+  };
+
+  const startPrivateChat = async (targetUserId: string): Promise<string | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return null;
+    const myId = session.user.id;
+    if (myId === targetUserId) return null; // Can't chat with yourself
+
+    // 1. Check if private chat already exists between these two
+    const { data: myPrivateChats } = await supabase
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', myId);
+      
+    if (myPrivateChats && myPrivateChats.length > 0) {
+      const chatIds = myPrivateChats.map(c => c.conversation_id);
+      const { data: existingTargetParts } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, conversations!inner(type)')
+        .eq('user_id', targetUserId)
+        .eq('conversations.type', 'private')
+        .in('conversation_id', chatIds);
+
+      if (existingTargetParts && existingTargetParts.length > 0) {
+        return existingTargetParts[0].conversation_id;
+      }
+    }
+
+    // 2. Create new private chat
+    const { data: newConv } = await supabase.from('conversations').insert({
+      type: 'private'
+    }).select('id').single();
+
+    if (newConv) {
+      await supabase.from('conversation_participants').insert([
+        { conversation_id: newConv.id, user_id: myId },
+        { conversation_id: newConv.id, user_id: targetUserId }
+      ]);
+      await fetchChats();
+      return newConv.id;
+    }
+    
+    return null;
   };
 
   return (
-    <ChatContext.Provider value={{ conversations, messages, sendMessage, markAsRead }}>
+    <ChatContext.Provider value={{ 
+      conversations, messages, sendMessage, markAsRead, startPrivateChat,
+      activeConversationId, setActiveConversationId, fetchChats
+    }}>
       {children}
     </ChatContext.Provider>
   );

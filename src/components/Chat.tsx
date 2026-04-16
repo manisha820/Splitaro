@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChat } from '../contexts/ChatContext';
-import { Conversation, Message } from '../types';
 
 export default function Chat() {
-  const { conversations, messages, sendMessage, markAsRead } = useChat();
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const { conversations, messages, sendMessage, markAsRead, activeConversationId, setActiveConversationId, fetchChats } = useChat();
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
   const activeMessages = activeConversationId ? messages[activeConversationId] || [] : [];
+
+  useEffect(() => {
+    fetchChats();
+  }, []);
 
   useEffect(() => {
     if (activeConversationId) {
@@ -22,16 +24,17 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputText.trim() && activeConversationId) {
-      sendMessage(activeConversationId, inputText.trim());
+      const txt = inputText.trim();
       setInputText('');
+      await sendMessage(activeConversationId, txt);
     }
   };
 
   return (
-    <div className="pt-24 px-6 max-w-7xl mx-auto h-[calc(100vh-180px)] flex flex-col">
+    <div className="pt-24 px-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col relative z-10 bg-surface">
       <AnimatePresence mode="wait">
         {!activeConversationId ? (
           <motion.div 
@@ -39,10 +42,18 @@ export default function Chat() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="flex-1 space-y-4 overflow-y-auto pb-4"
+            className="flex-1 space-y-4 overflow-y-auto pb-24"
           >
             <h2 className="text-3xl font-headline font-extrabold mb-6">Messages</h2>
-            {conversations.map(conv => (
+            {conversations.length === 0 ? (
+              <div className="bg-white p-8 rounded-[2.5rem] text-center shadow-sm flex flex-col items-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center text-primary mb-4">
+                  <span className="material-symbols-outlined text-3xl">chat_bubble</span>
+                </div>
+                <h3 className="text-xl font-bold mb-2">No messages yet</h3>
+                <p className="text-on-surface-variant text-sm">Join a Route Pool or message someone to start chatting!</p>
+              </div>
+            ) : conversations.map(conv => (
               <div 
                 key={conv.id}
                 onClick={() => setActiveConversationId(conv.id)}
@@ -53,7 +64,9 @@ export default function Chat() {
                     <img src={conv.avatar} alt={conv.name} className="w-14 h-14 rounded-2xl object-cover" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-                      <span className="material-symbols-outlined text-3xl">groups</span>
+                      <span className="material-symbols-outlined text-3xl">
+                        {conv.type === 'private' ? 'person' : 'groups'}
+                      </span>
                     </div>
                   )}
                   {conv.unreadCount > 0 && (
@@ -78,7 +91,7 @@ export default function Chat() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="flex-1 flex flex-col bg-white rounded-[2.5rem] shadow-sm overflow-hidden"
+            className="flex-1 flex flex-col bg-white rounded-[2.5rem] shadow-sm overflow-hidden border border-surface-container mb-24"
           >
             {/* Chat Header */}
             <div className="p-4 border-bottom flex items-center gap-4 bg-surface-container-low">
@@ -90,10 +103,12 @@ export default function Chat() {
               </button>
               <div className="flex items-center gap-3">
                 {activeConversation?.avatar ? (
-                  <img src={activeConversation.avatar} alt={activeConversation.name} className="w-10 h-10 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                  <img src={activeConversation.avatar} alt={activeConversation?.name} className="w-10 h-10 rounded-xl object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    <span className="material-symbols-outlined">groups</span>
+                    <span className="material-symbols-outlined">
+                      {activeConversation?.type === 'private' ? 'person' : 'groups'}
+                    </span>
                   </div>
                 )}
                 <div>
@@ -124,6 +139,9 @@ export default function Chat() {
                   </div>
                 </div>
               ))}
+              {activeMessages.length === 0 && (
+                <div className="text-center text-on-surface-variant font-bold mt-10">Say hi!</div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -134,7 +152,7 @@ export default function Chat() {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 px-5 py-3 rounded-2xl bg-white border-none focus:ring-2 focus:ring-primary transition-all text-sm"
+                className="flex-1 px-5 py-3 rounded-2xl bg-white border-none focus:ring-2 focus:ring-primary transition-all text-sm shadow-sm"
               />
               <button 
                 type="submit"

@@ -21,7 +21,7 @@ export interface Conversation {
 
 export interface Shipment {
   id: string;
-  orderNumber: string;
+  ordernumber: string;
   origin: string;
   destination: string;
   weight: string;
@@ -34,6 +34,8 @@ export interface Shipment {
 
 export interface Match {
   id: string;
+  groupId?: string;
+  shipmentId?: string;
   title: string;
   subtitle: string;
   score: number;

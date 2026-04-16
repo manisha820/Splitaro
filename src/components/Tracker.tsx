@@ -1,11 +1,26 @@
 import { motion } from 'motion/react';
 import { Screen } from '../types';
+import { useData } from '../contexts/DataContext';
 
 interface TrackerProps {
   onNavigate: (screen: Screen) => void;
 }
 
 export default function Tracker({ onNavigate }: TrackerProps) {
+  const { shipments, selectedShipmentId } = useData();
+  const shipment = shipments.find(s => s.id === selectedShipmentId);
+
+  if (!shipment) {
+    return (
+      <div className="pt-24 px-6 max-w-7xl mx-auto space-y-6 text-center">
+        <p>Shipment not found.</p>
+        <button onClick={() => onNavigate('dashboard')} className="text-primary font-bold">Go Back</button>
+      </div>
+    );
+  }
+
+  const p = shipment.progress;
+
   return (
     <div className="pt-24 px-6 max-w-7xl mx-auto space-y-6">
       <header className="flex items-center justify-between">
@@ -26,13 +41,16 @@ export default function Tracker({ onNavigate }: TrackerProps) {
           className="w-full h-full object-cover opacity-60"
           referrerPolicy="no-referrer"
         />
+        <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 flex items-center gap-2">
+          <span className="text-xs font-bold text-primary">{shipment.origin} → {shipment.destination}</span>
+        </div>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2">
             <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white shadow-xl shadow-primary/40 animate-bounce">
               <span className="material-symbols-outlined">local_shipping</span>
             </div>
             <div className="bg-white px-4 py-1 rounded-full shadow-lg text-[10px] font-bold uppercase tracking-widest text-primary">
-              In Transit
+              {shipment.status}
             </div>
           </div>
         </div>
@@ -43,11 +61,11 @@ export default function Tracker({ onNavigate }: TrackerProps) {
         <div className="flex justify-between items-start">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Tracking ID</p>
-            <h3 className="text-2xl font-headline font-extrabold">Order #SP-8821</h3>
+            <h3 className="text-2xl font-headline font-extrabold text-primary">#{shipment.id.slice(0,8).toUpperCase()}</h3>
           </div>
           <div className="bg-primary/10 px-4 py-2 rounded-2xl text-center">
-            <p className="text-[10px] font-bold uppercase text-primary/60">Arrival</p>
-            <p className="text-lg font-headline font-bold text-primary">2 Days</p>
+            <p className="text-[10px] font-bold uppercase text-primary/60">Status</p>
+            <p className="text-sm font-headline font-bold text-primary">{shipment.progress}%</p>
           </div>
         </div>
 
@@ -67,30 +85,29 @@ export default function Tracker({ onNavigate }: TrackerProps) {
         
         <div className="space-y-0">
           <TimelineItem 
-            title="Shipment Picked Up"
-            date="Nov 12, 2023"
-            time="09:45 AM"
-            status="completed"
-            icon="check_circle"
-            tags={['Verify contents']}
+            title="Shipment Processing"
+            description={shipment.description}
+            status={p >= 10 ? 'completed' : p > 0 ? 'current' : 'pending'}
+            icon="schedule"
+            tags={['Details confirmed']}
+          />
+          <TimelineItem 
+            title="AI Optimization"
+            description={shipment.type === 'batch' ? "Matched in Route Pool" : "Scanning routes..."}
+            status={p >= 40 ? 'completed' : p >= 10 ? 'current' : 'pending'}
+            icon="auto_awesome"
+            tags={shipment.type === 'batch' ? ['Route Pool', 'Shared'] : ['Solo']}
           />
           <TimelineItem 
             title="In Transit"
-            description="Currently at Chicago Hub"
-            status="current"
+            description={`Headed to ${shipment.destination}`}
+            status={p >= 100 ? 'completed' : p >= 40 ? 'current' : 'pending'}
             icon="local_shipping"
-            tags={['Air Freight', 'Priority']}
-          />
-          <TimelineItem 
-            title="Out for Delivery"
-            description="Estimated: Nov 15"
-            status="pending"
-            icon="inventory_2"
           />
           <TimelineItem 
             title="Delivered"
-            description="Awaiting arrival"
-            status="pending"
+            description="Package arrived"
+            status={p === 100 ? 'completed' : 'pending'}
             icon="home"
             isLast
           />
@@ -104,7 +121,7 @@ export default function Tracker({ onNavigate }: TrackerProps) {
         </div>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">AI Prediction</p>
-          <p className="text-sm font-bold text-on-surface">Arriving 4 hours earlier than usual for this route.</p>
+          <p className="text-sm font-bold text-on-surface">Arriving optimally for this route.</p>
         </div>
       </div>
     </div>
@@ -118,7 +135,7 @@ function TimelineItem({ title, date, time, status, icon, description, tags, isLa
   return (
     <div className="flex gap-4">
       <div className="flex flex-col items-center">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center z-10 ${
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center z-10 transition-colors duration-500 ${
           isCompleted ? 'bg-primary text-white' : 
           isCurrent ? 'bg-primary text-white ring-4 ring-primary/20' : 
           'bg-surface-container text-on-surface-variant'
@@ -126,15 +143,15 @@ function TimelineItem({ title, date, time, status, icon, description, tags, isLa
           <span className="material-symbols-outlined text-xl">{icon}</span>
         </div>
         {!isLast && (
-          <div className={`w-0.5 h-16 ${isCompleted ? 'bg-primary' : 'bg-surface-container'}`}></div>
+          <div className={`w-0.5 h-16 transition-colors duration-500 ${isCompleted ? 'bg-primary' : 'bg-surface-container'}`}></div>
         )}
       </div>
       <div className="pb-8 flex-1">
-        <h4 className={`font-bold ${isCompleted || isCurrent ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+        <h4 className={`font-bold transition-colors ${isCompleted || isCurrent ? 'text-on-surface' : 'text-on-surface-variant'}`}>
           {title}
         </h4>
         {date && <p className="text-xs text-on-surface-variant">{date} • {time}</p>}
-        {description && <p className="text-xs text-primary font-semibold mt-1">{description}</p>}
+        {description && <p className={`text-xs font-semibold mt-1 ${isCompleted || isCurrent ? 'text-primary' : 'text-on-surface-variant/50'}`}>{description}</p>}
         {tags && (
           <div className="flex gap-2 mt-2">
             {tags.map((tag: string) => (

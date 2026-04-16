@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../contexts/DataContext';
 
 interface AddShipmentProps {
@@ -14,15 +14,52 @@ export default function AddShipment({ onClose }: AddShipmentProps) {
     weight: '',
     description: ''
   });
+  const [errors, setErrors] = useState<{ origin?: string; destination?: string; weight?: string; description?: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validateForm = () => {
+    const newErrors: any = {};
+    if (!formData.origin.trim()) newErrors.origin = 'Origin is required';
+    if (!formData.destination.trim()) newErrors.destination = 'Destination is required';
+    
+    const weightNum = parseFloat(formData.weight);
+    if (!formData.weight.trim()) newErrors.weight = 'Required';
+    else if (isNaN(weightNum) || weightNum <= 0) newErrors.weight = 'Invalid number';
+    else if (weightNum > 1000) newErrors.weight = 'Exceeds 1000kg limit';
+
+    if (!formData.description.trim()) newErrors.description = 'Description is required';
+    else if (formData.description.length < 5) newErrors.description = 'Provide more detail';
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addShipment({
+    if (!validateForm()) return;
+
+    setIsSubmitting(true);
+    
+    await addShipment({
       ...formData,
       weight: `${formData.weight} kg`,
       type: 'solo'
     });
-    onClose();
+
+    setIsSubmitting(false);
+    setIsSuccess(true);
+    
+    setTimeout(() => {
+      onClose();
+    }, 1000);
+  };
+
+  const handleChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field as keyof typeof errors]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
   };
 
   return (
@@ -39,35 +76,40 @@ export default function AddShipment({ onClose }: AddShipmentProps) {
         className="w-full max-w-lg bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 space-y-8 shadow-2xl"
       >
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-headline font-extrabold">Add New Shipment</h2>
-          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container">
+          <h2 className="text-2xl font-headline font-extrabold flex items-center gap-2">
+            Add New Shipment
+            {isSuccess && <span className="material-symbols-outlined text-green-500 font-bold">check_circle</span>}
+          </h2>
+          <button onClick={onClose} disabled={isSubmitting} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container disabled:opacity-50">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Origin City</label>
               <input 
                 type="text" 
-                required
                 value={formData.origin}
-                onChange={(e) => setFormData({...formData, origin: e.target.value})}
-                className="w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all"
+                onChange={(e) => handleChange('origin', e.target.value)}
+                disabled={isSubmitting || isSuccess}
+                className={`w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-60 ${errors.origin ? 'ring-2 ring-red-500/50 bg-red-500/5' : ''}`}
                 placeholder="London"
               />
+              {errors.origin && <p className="text-[10px] text-red-500 font-bold px-1">{errors.origin}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Destination</label>
               <input 
                 type="text" 
-                required
                 value={formData.destination}
-                onChange={(e) => setFormData({...formData, destination: e.target.value})}
-                className="w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all"
+                onChange={(e) => handleChange('destination', e.target.value)}
+                disabled={isSubmitting || isSuccess}
+                className={`w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-60 ${errors.destination ? 'ring-2 ring-red-500/50 bg-red-500/5' : ''}`}
                 placeholder="Berlin"
               />
+              {errors.destination && <p className="text-[10px] text-red-500 font-bold px-1">{errors.destination}</p>}
             </div>
           </div>
 
@@ -75,30 +117,40 @@ export default function AddShipment({ onClose }: AddShipmentProps) {
             <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Weight (kg)</label>
             <input 
               type="number" 
-              required
               value={formData.weight}
-              onChange={(e) => setFormData({...formData, weight: e.target.value})}
-              className="w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all"
+              onChange={(e) => handleChange('weight', e.target.value)}
+              disabled={isSubmitting || isSuccess}
+              className={`w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-60 ${errors.weight ? 'ring-2 ring-red-500/50 bg-red-500/5' : ''}`}
               placeholder="5.0"
+              step="0.1"
             />
+            {errors.weight && <p className="text-[10px] text-red-500 font-bold px-1">{errors.weight}</p>}
           </div>
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Item Description</label>
             <textarea 
-              required
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
-              className="w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all h-32 resize-none"
+              onChange={(e) => handleChange('description', e.target.value)}
+              disabled={isSubmitting || isSuccess}
+              className={`w-full px-5 py-4 rounded-2xl bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all h-32 resize-none disabled:opacity-60 ${errors.description ? 'ring-2 ring-red-500/50 bg-red-500/5' : ''}`}
               placeholder="What are you shipping?"
             />
+            {errors.description && <p className="text-[10px] text-red-500 font-bold px-1">{errors.description}</p>}
           </div>
 
           <button 
             type="submit"
-            className="w-full py-4 bg-gradient-primary text-white font-bold rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
+            disabled={isSubmitting || isSuccess}
+            className={`w-full py-4 text-white font-bold rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 ${isSuccess ? 'bg-green-500 shadow-green-500/30' : 'bg-gradient-primary shadow-primary/20 hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:hover:scale-100'}`}
           >
-            Create Shipment
+            {isSubmitting ? (
+              <><span className="material-symbols-outlined animate-spin">progress_activity</span> Creating...</>
+            ) : isSuccess ? (
+              <><span className="material-symbols-outlined">check</span> Created Successfully</>
+            ) : (
+              'Create Shipment'
+            )}
           </button>
         </form>
       </motion.div>

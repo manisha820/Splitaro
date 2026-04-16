@@ -9,7 +9,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
-  const { shipments, matches, joinMatch } = useData();
+  const { shipments, matches, joinMatch, advanceShipment, setSelectedShipmentId, setSelectedGroupId } = useData();
   const [isAdding, setIsAdding] = useState(false);
 
   return (
@@ -45,18 +45,25 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         </div>
 
         <div className="space-y-4">
-          {shipments.map(shipment => (
-            <ShipmentCard 
-              key={shipment.id}
-              id={shipment.orderNumber}
-              route={`${shipment.origin} → ${shipment.destination}`}
-              status={shipment.status}
-              weight={shipment.weight}
-              eta={shipment.eta || 'Arriving in 2 days'}
-              progress={shipment.progress}
-              onNavigate={() => onNavigate('tracker')}
-            />
-          ))}
+          {shipments.map(shipment => {
+            const calculatedEta = shipment.progress === 100 
+              ? 'Arrived' 
+              : `${Math.floor((100 - shipment.progress) * 0.4)}h ${Math.floor(Math.random() * 60)}m remaining`;
+              
+            return (
+              <ShipmentCard 
+                key={shipment.id}
+                id={shipment.id.slice(0,8).toUpperCase()}
+                route={`${shipment.origin} → ${shipment.destination}`}
+                status={shipment.status}
+                weight={shipment.weight}
+                eta={shipment.eta || calculatedEta}
+                progress={shipment.progress}
+                onNavigate={() => { setSelectedShipmentId(shipment.id); onNavigate('tracker'); }}
+                onAdvance={(e: any) => { e.stopPropagation(); advanceShipment(shipment.id); }}
+              />
+            );
+          })}
         </div>
       </section>
 
@@ -67,7 +74,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           {matches.map(match => (
             <div 
               key={match.id}
-              onClick={() => onNavigate('group-detail')}
+              onClick={() => { if(match.groupId) setSelectedGroupId(match.groupId); onNavigate('group-detail'); }}
               className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 border border-primary/10 cursor-pointer hover:bg-primary/10 transition-colors"
             >
               <div className="flex items-center gap-2 mb-4">
@@ -87,7 +94,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  joinMatch(match.id);
+                  if(match.groupId && match.shipmentId) joinMatch(match.groupId, match.shipmentId);
                 }}
                 className="px-6 py-2 bg-primary text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20"
               >
@@ -109,20 +116,34 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         <div className="bg-surface-container-low p-6 rounded-3xl">
           <span className="material-symbols-outlined text-tertiary mb-3">savings</span>
           <p className="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant mb-1">Potential Saving</p>
-          <p className="text-2xl font-headline font-extrabold">$42.50</p>
+          <p className="text-2xl font-headline font-extrabold">${(shipments.length * 12.50 + matches.length * 35).toFixed(2)}</p>
         </div>
         <div className="bg-surface-container-low p-6 rounded-3xl">
           <span className="material-symbols-outlined text-secondary mb-3">bolt</span>
           <p className="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant mb-1">Match Score</p>
-          <p className="text-2xl font-headline font-extrabold">98%</p>
+          <p className="text-2xl font-headline font-extrabold">{matches.length > 0 ? matches[0].score + '%' : 'N/A'}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function ShipmentCard({ id, route, status, weight, eta, progress, onNavigate }: any) {
+function ShipmentCard({ id, route, status, weight, eta, progress, onNavigate, onAdvance }: any) {
   const isOptimizing = status === 'AI-Optimizing';
+  const isDelivered = status === 'Delivered';
+  
+  const statusColor = isOptimizing 
+    ? 'bg-tertiary/10 text-tertiary' 
+    : isDelivered 
+      ? 'bg-green-500/10 text-green-600'
+      : 'bg-secondary/10 text-secondary';
+      
+  const barColor = isOptimizing 
+    ? 'bg-tertiary' 
+    : isDelivered 
+      ? 'bg-green-500' 
+      : 'bg-secondary';
+
   return (
     <div 
       onClick={onNavigate}
@@ -130,7 +151,7 @@ function ShipmentCard({ id, route, status, weight, eta, progress, onNavigate }: 
     >
       <div className="flex justify-between items-start mb-4">
         <div>
-          <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-2 ${isOptimizing ? 'bg-tertiary/10 text-tertiary' : 'bg-secondary/10 text-secondary'}`}>
+          <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-2 ${statusColor}`}>
             {status}
           </span>
           <h4 className="text-xl font-headline font-bold">{route}</h4>
@@ -140,19 +161,32 @@ function ShipmentCard({ id, route, status, weight, eta, progress, onNavigate }: 
           <p className="text-lg font-headline font-extrabold text-primary">{weight}</p>
         </div>
       </div>
-      <div className="h-1 w-full bg-surface-container rounded-full mb-4">
+      <div className="h-1 w-full bg-surface-container rounded-full mb-4 overflow-hidden">
         <div 
-          className={`h-full rounded-full transition-all duration-1000 ${isOptimizing ? 'bg-tertiary' : 'bg-secondary'}`}
+          className={`h-full rounded-full transition-all duration-1000 ${barColor}`}
           style={{ width: `${progress}%` }}
         ></div>
       </div>
       <div className="flex justify-between items-center text-xs font-bold text-on-surface-variant">
         <div className="flex items-center gap-1">
-          <span className="material-symbols-outlined text-sm">{isOptimizing ? 'schedule' : 'local_shipping'}</span>
+          <span className="material-symbols-outlined text-sm">
+            {isDelivered ? 'check_circle' : isOptimizing ? 'schedule' : 'local_shipping'}
+          </span>
           {eta}
         </div>
-        <div className="flex items-center gap-1 text-primary">
-          Details <span className="material-symbols-outlined text-sm">chevron_right</span>
+        <div className="flex items-center gap-4">
+          {!isDelivered && (
+            <button 
+              onClick={onAdvance}
+              className="flex items-center gap-1 text-tertiary hover:bg-tertiary/10 px-2 py-1 rounded-lg transition-colors"
+              title="Advance Demo Progress"
+            >
+              Advance <span className="material-symbols-outlined text-sm">fast_forward</span>
+            </button>
+          )}
+          <div className="flex items-center gap-1 text-primary">
+            Details <span className="material-symbols-outlined text-sm">chevron_right</span>
+          </div>
         </div>
       </div>
     </div>
